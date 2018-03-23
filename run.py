@@ -15,7 +15,7 @@ import signal
 import sys
 # from model import resnet
 from controllers import GCN
-from util import normalize, sparse_mx_to_torch_sparse_tensor, dense_to_one_hot
+from util import normalize, sparse_mx_to_torch_sparse_tensor, dense_to_one_hot, output_results
 
 # sys.path.insert(0, '/home/anubhava/ssd.pytorch/')
 
@@ -113,11 +113,18 @@ def update_architecture(adj, f, a):
 '''
     Build child model
 '''
-def build_child_model(m, actions):
-    return None
+def build_child_model(adj, f):
+    return (adj, f)
+
+def naive_estimate(architecture):
+    (adj, f) = architecture
+    if np.sum(adj) > 10:
+        return 1
+    else:
+        return -1
 
 
-def rolloutActions(layers):
+def rolloutActions():
     global controller
 
     actions = []
@@ -129,22 +136,18 @@ def rolloutActions(layers):
         action = controller(features_torch, adj_torch)
         actions.append(action)
         adj, features = update_architecture(adj, features, action.numpy())
-    return actions 
+    return actions, build_child_model(adj, features)
 
-def rollout_batch(model, N, e):
-    global b
-    global R_sum
+def rollout_batch(N, e):
+    
     newModels = []
     idxs = []
     Rs = [0]*N
     actionSeqs = []
-    studentModels = []
     for i in range(N):
-        model_ = copy.deepcopy(model)
-        layers = layersFromModule(model_)
-        actions = rolloutActions(layers)
+        
+        actions, newModel = rolloutActions()
         actionSeqs.append(actions)
-        newModel = build_child_model(model_, [a.data.numpy()[0] for a in actions])
         hashcode = hash(str(newModel)) if newModel else 0
         if hashcode in previousModels and constrained == False:
             Rs[i] = previousModels[hashcode]
@@ -156,14 +159,17 @@ def rollout_batch(model, N, e):
             newModels.append(newModel)
             studentModels.append(newModel)
             idxs.append(i)
-    accs = trainTeacherStudentParallel(model, studentModels, dataset, epochs=5)
-    for acc in accs:
-        print('Val accuracy: %f' % acc)
+    #accs = trainTeacherStudentParallel(model, newModels, dataset, epochs=5)
+        
     for i in range(len(newModels)):
-        print('Compression: %f' % (1.0 - (float(numParams(newModels[i]))/parentSize)))
-    R = [Reward(accs[i], numParams(newModels[i]), baseline_acc, parentSize, iter=int(e), constrained=constrained, vars=[numParams(newModels[i])], cons=[1700000]) for i in range(len(accs))]
-    for i in range(len(idxs)):
-        Rs[idxs[i]] = R[i]
+        #print('Val accuracy: %f' % accs[i])
+        #print('Compression: %f' % (1.0 - (float(numParams(newModels[i]))/parentSize)))
+        reward = naive_estimate(newModels[i])
+        #Reward(accs[i], numParams(newModels[i]), baseline_acc, parentSize, iter=int(e), constrained=constrained, vars=[numParams(newModels[i])], cons=[1700000])
+        Rs[idxs[i]] = reward
+        hashcode = hash(str(newModel))
+        previousModels[hashcode] = reward
+
     for i in range(len(Rs)):
         print('Reward achieved %f' % Rs[i])
     return (Rs, actionSeqs, newModels)
@@ -173,11 +179,12 @@ def rollouts(N, model, e):
     Rs = []
     actionSeqs = []
     models = []
-    (Rs, actionSeqs, models) = rollout_batch(copy.deepcopy(model), N, e)
+    (Rs, actionSeqs, models) = rollout_batch(N, e)
     return (Rs, actionSeqs, models)
 
 
 def update_controller(actionSeqs, avgR):
+    global b
     print('Reinforcing for epoch %d' % e)
     opti.zero_grad()
     for actions in actionSeqs:
@@ -187,7 +194,7 @@ def update_controller(actionSeqs, avgR):
     opti.step()
 
 epochs = 100
-N = 3
+N = 5
 prevRs = [0, 0, 0, 0, 0]
 for e in range(epochs):
     # Compute N rollouts
