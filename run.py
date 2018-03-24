@@ -104,10 +104,27 @@ b = 0
 Update architecture based on the prediction of last timestep
 '''
 def update_architecture(adj, f, a):
+    add_index = -1
+    concat_index = -1
     for i, item in enumate(action):
         if item[-1] != 1:
-            adj = np.concatenate([adj, dense_to_one_hot(i, adj.shape[0]).transpose()], 1)
-            f = np.concatenate([f, item[:-1]])
+            if item[-3] == 1: # add op
+                if add_index == -1:
+                    add_index = adj.shape[1]
+                    adj = np.concatenate([adj, dense_to_one_hot(i, adj.shape[0]).transpose()], 1)
+                    f = np.concatenate([f, item[:-1]])
+                else:
+                    adj[i, add_index] = 1
+            elif item[-2] == 1: # concat op
+                if concat_index == -1:
+                    concat_index = adj.shape[1]
+                    adj = np.concatenate([adj, dense_to_one_hot(i, adj.shape[0]).transpose()], 1)
+                    f = np.concatenate([f, item[:-1]])
+                else:
+                    adj[i. concat_index] = 1
+            else:
+                adj = np.concatenate([adj, dense_to_one_hot(i, adj.shape[0]).transpose()], 1)
+                f = np.concatenate([f, item[:-1]])
     return adj, f
 
 '''
