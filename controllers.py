@@ -67,20 +67,21 @@ class GraphConvolution(Module):
 
 
 class GCN(nn.Module):
-    def __init__(self, nfeat, nhid, nclass, nlayer, dropout):
+    def __init__(self, nfeat, nhid, nclass, dropout):
         super(GCN, self).__init__()
 
-        self.gc = []
-        self.gc.append(GraphConvolution(nfeat, nhid))
-        for ite in range(nlayer - 2):
-            self.gc.append(GraphConvolution(nhid, nhid))
-        self.gc.append(GraphConvolution(nhid, nclass))
+        # self.gc = []
+        self.gc1 = GraphConvolution(nfeat, nhid)
+        # for ite in range(nlayer - 2):
+            # self.gc.append(GraphConvolution(nhid, nhid))
+        self.gc2 = GraphConvolution(nhid, nclass)
         self.dropout = dropout
 
     def forward(self, x, adj):
         
-        for op in self.gc[:-1]:
-            x = F.relu(op(x, adj))
+        #for op in self.gc[:-1]:
+        x = F.relu(self.gc1(x, adj))
         # x = F.dropout(x, self.dropout, training=self.training)
-        x = self.gc[-1](x, adj)
-        return F.softmax(x).multinomial()
+        x = F.softmax(self.gc2(x, adj), dim=-1)
+        m = torch.distributions.Categorical(x)
+        return m, m.sample()
